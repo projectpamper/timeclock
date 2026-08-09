@@ -29,6 +29,13 @@
   // It looks like: https://script.google.com/macros/s/XXXX.../exec
   const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbztz-FgDcgWY1rWFMXFQU9rEe7w7daNkudVghOlBhrFHuzzhxwE_tf6cMlE_DMJY-x3/exec";
   // ────────────────────────────────────────────────────────────────────────
+
+  // ── SALON LOCATION LOCK ──────────────────────────────────────────────────
+  // 391 Hackney Road, London E2 8PP
+  const SALON_LAT    = 51.5297;
+  const SALON_LNG    = -0.0778;
+  const RADIUS_METRES = 150;   // must be within 150m of the salon
+  // ────────────────────────────────────────────────────────────────────────
 </script>
 <script type="text/babel">
 const { useState, useEffect, useCallback } = React;
@@ -50,7 +57,7 @@ const STAFF = [
   { name:"Natalia",  role:"Beauty Apprentice"  },
 ];
 
-const ADMIN_PIN   = "2691";
+const ADMIN_PIN   = "1613";
 const PINS_KEY    = "pp-tc-pins";
 const DEFAULT_PINS = Object.fromEntries(STAFF.map(s=>[s.name,"0000"]));
 
@@ -81,6 +88,34 @@ async function sendToSheet(record) {
   } catch(err) {
     return { success: false, error: err.message };
   }
+}
+
+// Haversine formula — returns distance in metres between two GPS points
+function distanceMetres(lat1,lng1,lat2,lng2){
+  const R=6371000;
+  const dLat=(lat2-lat1)*Math.PI/180;
+  const dLng=(lng2-lng1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+// Returns a promise: resolves with {ok:true} or {ok:false, reason:"..."}
+function checkLocation(){
+  return new Promise(resolve=>{
+    if(!navigator.geolocation){resolve({ok:false,reason:"Your browser doesn't support location. Please use Safari on iPhone or Chrome on Android."});return;}
+    navigator.geolocation.getCurrentPosition(
+      pos=>{
+        const dist=distanceMetres(pos.coords.latitude,pos.coords.longitude,SALON_LAT,SALON_LNG);
+        if(dist<=RADIUS_METRES) resolve({ok:true});
+        else resolve({ok:false,reason:`You appear to be ${Math.round(dist)}m away from the salon. You must be on-site to clock in.`});
+      },
+      err=>{
+        if(err.code===1) resolve({ok:false,reason:"Location permission was denied. Please allow location access and try again."});
+        else resolve({ok:false,reason:"Couldn't get your location. Make sure location services are turned on."});
+      },
+      {timeout:10000,maximumAge:0,enableHighAccuracy:true}
+    );
+  });
 }
 
 const page={minHeight:"100vh",background:"linear-gradient(155deg,#FAF6F1 55%,#EDE8E0 100%)",display:"flex",flexDirection:"column",alignItems:"center",padding:"28px 16px 56px"};
@@ -136,7 +171,8 @@ function App(){
   const [lastAction,setLastAction]= useState(null);
   const [pinError,setPinError]= useState("");
   const [adminPinError,setAdminPinError]= useState("");
-  const [saving,setSaving]    = useState(false);
+  const [saving,setSaving]      = useState(false);
+  const [locationError,setLocationError] = useState("");
   const [saveStatus,setSaveStatus]= useState(null); // "ok" | "fail"
   const [adminSub,setAdminSub]= useState("log");
   const [editingPin,setEditingPin]= useState(null);
@@ -157,6 +193,17 @@ function App(){
   const handleVerifyPin=async(enteredPin,resetPin)=>{
     if(enteredPin===pins[selected.name]){
       setPinError("");
+
+      // ── Location check ────────────────────────────────────────────────
+      setScreen("locating");
+      const loc=await checkLocation();
+      if(!loc.ok){
+        setLocationError(loc.reason);
+        setScreen("locationFail");
+        return;
+      }
+      // ─────────────────────────────────────────────────────────────────
+
       const action=getLastAction(selected.name)==="in"?"out":"in";
       const record={
         name:selected.name,
@@ -192,6 +239,34 @@ function App(){
     if(enteredPin===ADMIN_PIN){setAdminPinError("");setScreen("admin");}
     else{resetPin();setAdminPinError("Incorrect PIN");}
   };
+
+  // ── LOCATING SCREEN ───────────────────────────────────────────────────────
+  if(screen==="locating"){
+    return(
+      <div style={{...page,justifyContent:"center"}}>
+        <div style={card({textAlign:"center"})}>
+          <div style={{fontSize:40,marginBottom:16}}>📍</div>
+          <div style={{width:40,height:40,border:`4px solid ${C.sand}`,borderTopColor:C.brown,borderRadius:"50%",animation:"spin .8s linear infinite",margin:"0 auto 20px"}}/>
+          <div style={{fontFamily:"'League Spartan',sans-serif",fontSize:18,fontWeight:700,color:C.brown}}>Checking your location…</div>
+          <div style={{fontSize:13,color:C.brown,opacity:.5,marginTop:8}}>Please allow location access if prompted</div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── LOCATION FAIL SCREEN ──────────────────────────────────────────────────
+  if(screen==="locationFail"){
+    return(
+      <div style={{...page,justifyContent:"center"}}>
+        <div style={{...card({textAlign:"center",animation:"pop .4s ease forwards"})}}>
+          <div style={{fontSize:54,marginBottom:12}}>🚫</div>
+          <div style={{fontFamily:"'League Spartan',sans-serif",fontSize:22,fontWeight:700,color:C.brown,marginBottom:12}}>Cannot clock in</div>
+          <div style={{fontSize:14,color:C.brown,opacity:.65,lineHeight:1.7,marginBottom:24}}>{locationError}</div>
+          <button onClick={()=>setScreen("home")} style={{padding:"14px 32px",borderRadius:12,border:"none",background:C.brown,color:C.white,fontFamily:"'League Spartan',sans-serif",fontSize:15,fontWeight:700,cursor:"pointer"}}>Back to home</button>
+        </div>
+      </div>
+    );
+  }
 
   // ── SAVING SCREEN ──────────────────────────────────────────────────────────
   if(screen==="saving"){
