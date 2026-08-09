@@ -27,25 +27,27 @@
   // ── PASTE YOUR APPS SCRIPT URL BELOW ────────────────────────────────────
   // After deploying your Apps Script, replace the empty string with your URL
   // It looks like: https://script.google.com/macros/s/XXXX.../exec
-  const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyHELTFlzXlBtCEYAs2Ontz5u2hgIcHV27C3kjYW6frP3ap_9N8gZPsDekEebAgjbwA/exec";
+  const SCRIPT_URL = "";
   // ────────────────────────────────────────────────────────────────────────
 </script>
 <script type="text/babel">
 const { useState, useEffect, useCallback } = React;
 
 const STAFF = [
-  { name:"Anna",        role:"Massage Therapist" },
-  { name:"Craig",       role:"Massage Therapist" },
-  { name:"Hyacinth",    role:"Massage Therapist" },
-  { name:"Katerina",    role:"Massage Therapist" },
-  { name:"Nicola",      role:"Massage Therapist" },
-  { name:"Tasleem",     role:"Massage Therapist" },
-  { name:"Tia",         role:"Massage Therapist" },
-  { name:"Jade-Amelia", role:"Nail Technician"   },
-  { name:"Michelle",    role:"Nail Technician"   },
-  { name:"Shakira",     role:"Nail Technician"   },
-  { name:"Isha",        role:"Trainee"           },
-  { name:"Natalia",     role:"Trainee"           },
+  { name:"Anna",     role:"Massage Therapist"  },
+  { name:"Tia",      role:"Massage Therapist"  },
+  { name:"Craig",    role:"Massage Therapist"  },
+  { name:"Nicola",   role:"Massage Therapist"  },
+  { name:"Hyacinth", role:"Massage Therapist"  },
+  { name:"Katerina", role:"Massage Therapist"  },
+  { name:"Tasleem",  role:"Massage Therapist"  },
+  { name:"Kim",      role:"Massage Therapist"  },
+  { name:"Michelle", role:"Nail Technician"    },
+  { name:"Phoebe",   role:"Nail Technician"    },
+  { name:"Suki",     role:"Nail Technician"    },
+  { name:"Shakira",  role:"Nail Technician"    },
+  { name:"Isha",     role:"Beauty Apprentice"  },
+  { name:"Natalia",  role:"Beauty Apprentice"  },
 ];
 
 const ADMIN_PIN   = "2691";
@@ -327,7 +329,7 @@ function App(){
   }
 
   // ── HOME ───────────────────────────────────────────────────────────────────
-  const roles=["Nail Technician","Massage Therapist","Trainee"];
+  const roles=["Nail Technician","Massage Therapist","Beauty Apprentice"];
   return(
     <div style={page}>
       {!SCRIPT_URL&&(
