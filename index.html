@@ -32,9 +32,9 @@
 
   // ── SALON LOCATION LOCK ──────────────────────────────────────────────────
   // 391 Hackney Road, London E2 8PP
-  const SALON_LAT    = 51.5297;
-  const SALON_LNG    = -0.0778;
-  const RADIUS_METRES = 150;   // must be within 150m of the salon
+  const SALON_LAT    = 51.5318193;
+  const SALON_LNG    = -0.0629415;
+  const RADIUS_METRES = 250;   // must be within 250m of the salon
   // ────────────────────────────────────────────────────────────────────────
 </script>
 <script type="text/babel">
@@ -57,9 +57,32 @@ const STAFF = [
   { name:"Natalia",  role:"Beauty Apprentice"  },
 ];
 
-const ADMIN_PIN   = "1613";
-const PINS_KEY    = "pp-tc-pins";
-const DEFAULT_PINS = Object.fromEntries(STAFF.map(s=>[s.name,"0000"]));
+const ADMIN_PIN   = "1613";   // ← change this, it is readable by anyone
+
+// ── STAFF PINS ───────────────────────────────────────────────────────────
+// These are the master PINs. They work on every phone and tablet.
+// To change someone's PIN permanently, edit it here and commit the file.
+const STAFF_PINS = {
+  "Anna":     "7943",
+  "Tia":      "7353",
+  "Craig":    "4230",
+  "Nicola":   "7273",
+  "Hyacinth": "8735",
+  "Katerina": "3015",
+  "Tasleem":  "8965",
+  "Kim":      "3737",
+  "Michelle": "1330",
+  "Phoebe":   "4810",
+  "Suki":     "4382",
+  "Shakira":  "4579",
+  "Isha":     "3761",
+  "Natalia":  "7618",
+};
+// ─────────────────────────────────────────────────────────────────────────
+
+// Key bumped to v2 so old "0000" PINs saved on staff phones are ignored
+const PINS_KEY    = "pp-tc-pins-v2";
+const DEFAULT_PINS = Object.fromEntries(STAFF.map(s=>[s.name, STAFF_PINS[s.name] || "0000"]));
 
 const C = {
   brown:"#644830", sage:"#B3B792", rose:"#E0A796",
@@ -106,8 +129,11 @@ function checkLocation(){
     navigator.geolocation.getCurrentPosition(
       pos=>{
         const dist=distanceMetres(pos.coords.latitude,pos.coords.longitude,SALON_LAT,SALON_LNG);
-        if(dist<=RADIUS_METRES) resolve({ok:true});
-        else resolve({ok:false,reason:`You appear to be ${Math.round(dist)}m away from the salon. You must be on-site to clock in.`});
+        // Indoors, phone GPS is often out by 100m or more. accuracy is the phone's
+        // own error estimate, so allow for it rather than rejecting a genuine on-site staff member.
+        const slack=Math.min(pos.coords.accuracy||0, 500);
+        if(dist-slack<=RADIUS_METRES) resolve({ok:true});
+        else resolve({ok:false,reason:`You appear to be ${Math.round(dist)}m away from the salon. You must be on-site to clock in. If you are in the salon, move near a window and try again.`});
       },
       err=>{
         if(err.code===1) resolve({ok:false,reason:"Location permission was denied. Please allow location access and try again."});
@@ -174,8 +200,9 @@ function App(){
   const [saving,setSaving]      = useState(false);
   const [locationError,setLocationError] = useState("");
   const [saveStatus,setSaveStatus]= useState(null); // "ok" | "fail"
-  const [adminSub,setAdminSub]= useState("log");
+  const [adminSub,setAdminSub]= useState("pins");
   const [editingPin,setEditingPin]= useState(null);
+  const [showPins,setShowPins]= useState(false);
   const [newPinDraft,setNewPinDraft]= useState({});
 
   // Per-staff last-action stored locally so the IN/OUT badge works across sessions
@@ -369,7 +396,8 @@ function App(){
         </div>
 
         {adminSub==="pins"&&<>
-          <div style={{fontSize:13,color:C.brown,opacity:.55,marginBottom:16}}>Set each staff member's personal PIN. Default is 0000 — update before first shift.</div>
+          <div style={{fontSize:13,color:C.brown,opacity:.55,marginBottom:16}}>These are the master PINs, the same on every phone and tablet. Editing here only changes the PIN <strong>on this device</strong> — for a permanent change, edit STAFF_PINS in index.html.</div>
+          <button onClick={()=>setShowPins(v=>!v)} style={{marginBottom:12,padding:"8px 16px",borderRadius:10,border:`1.5px solid ${C.sand}`,background:"none",color:C.brown,fontFamily:"'League Spartan',sans-serif",fontSize:13,fontWeight:600,cursor:"pointer"}}>{showPins?"Hide PINs":"Show PINs"}</button>
           <div style={{background:C.white,borderRadius:14,overflow:"hidden",boxShadow:"0 2px 12px rgba(100,72,48,0.07)",marginBottom:12}}>
             {STAFF.map((s,i)=>(
               <div key={s.name} style={{borderBottom:i<STAFF.length-1?`1px solid ${C.cream}`:"none"}}>
@@ -391,7 +419,7 @@ function App(){
                       <div style={{fontFamily:"'League Spartan',sans-serif",fontWeight:700,color:C.brown,fontSize:15}}>{s.name}</div>
                       <div style={{fontSize:12,color:C.brown,opacity:.45}}>{s.role}</div>
                     </div>
-                    <div style={{fontFamily:"monospace",fontSize:18,letterSpacing:4,color:C.brown,opacity:.4}}>{"●●●●"}</div>
+                    <div style={{fontFamily:"monospace",fontSize:18,letterSpacing:4,color:C.brown,opacity:.55}}>{showPins?pins[s.name]:"●●●●"}</div>
                     <div style={{fontSize:12,color:C.brown,opacity:.3}}>Edit →</div>
                   </div>
                 )}
