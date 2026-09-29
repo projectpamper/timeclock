@@ -29,13 +29,6 @@
   // It looks like: https://script.google.com/macros/s/XXXX.../exec
   const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbztz-FgDcgWY1rWFMXFQU9rEe7w7daNkudVghOlBhrFHuzzhxwE_tf6cMlE_DMJY-x3/exec";
   // ────────────────────────────────────────────────────────────────────────
-
-  // ── SALON LOCATION LOCK ──────────────────────────────────────────────────
-  // 391 Hackney Road, London E2 8PP
-  const SALON_LAT    = 51.5318193;
-  const SALON_LNG    = -0.0629415;
-  const RADIUS_METRES = 250;   // must be within 250m of the salon
-  // ────────────────────────────────────────────────────────────────────────
 </script>
 <script type="text/babel">
 const { useState, useEffect, useCallback } = React;
@@ -98,50 +91,37 @@ const fmt = {
 function loadPins(){ try{return{...DEFAULT_PINS,...JSON.parse(localStorage.getItem(PINS_KEY)||"{}")}}catch{return DEFAULT_PINS} }
 
 // Send record to Google Sheets
+// Returns { status: "ok" | "fail" | "unconfirmed" }
+//   ok          - the Google Sheet script replied that it saved the row
+//   fail        - the script replied with an error
+//   unconfirmed - no readable reply (no signal, or Google didn't answer)
 async function sendToSheet(record) {
-  if (!SCRIPT_URL) return { success: false, error: "No script URL configured" };
+  if (!SCRIPT_URL) return { status: "fail", error: "No script URL configured" };
+  let res, text;
   try {
-    await fetch(SCRIPT_URL, {
+    res = await fetch(SCRIPT_URL, {
       method: "POST",
-      mode: "no-cors",
-      headers: { "Content-Type": "text/plain" },
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify(record),
     });
-    return { success: true };
+    text = await res.text();
   } catch(err) {
-    return { success: false, error: err.message };
+    return { status: "unconfirmed", error: err.message };
   }
-}
-
-// Haversine formula — returns distance in metres between two GPS points
-function distanceMetres(lat1,lng1,lat2,lng2){
-  const R=6371000;
-  const dLat=(lat2-lat1)*Math.PI/180;
-  const dLng=(lng2-lng1)*Math.PI/180;
-  const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
-  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-}
-
-// Returns a promise: resolves with {ok:true} or {ok:false, reason:"..."}
-function checkLocation(){
-  return new Promise(resolve=>{
-    if(!navigator.geolocation){resolve({ok:false,reason:"Your browser doesn't support location. Please use Safari on iPhone or Chrome on Android."});return;}
-    navigator.geolocation.getCurrentPosition(
-      pos=>{
-        const dist=distanceMetres(pos.coords.latitude,pos.coords.longitude,SALON_LAT,SALON_LNG);
-        // Indoors, phone GPS is often out by 100m or more. accuracy is the phone's
-        // own error estimate, so allow for it rather than rejecting a genuine on-site staff member.
-        const slack=Math.min(pos.coords.accuracy||0, 500);
-        if(dist-slack<=RADIUS_METRES) resolve({ok:true});
-        else resolve({ok:false,reason:`You appear to be ${Math.round(dist)}m away from the salon. You must be on-site to clock in. If you are in the salon, move near a window and try again.`});
-      },
-      err=>{
-        if(err.code===1) resolve({ok:false,reason:"Location permission was denied. Please allow location access and try again."});
-        else resolve({ok:false,reason:"Couldn't get your location. Make sure location services are turned on."});
-      },
-      {timeout:10000,maximumAge:0,enableHighAccuracy:true}
-    );
-  });
+  if (!res.ok) return { status: "fail", error: "HTTP " + res.status };
+  try {
+    const j = JSON.parse(text);
+    if (j && (j.status === "error" || j.result === "error" || j.success === false)) {
+      return { status: "fail", error: j.message || j.error || "Script error" };
+    }
+    return { status: "ok" };
+  } catch {
+    // Not JSON: Google sends an HTML page when the script itself breaks
+    if (/<html/i.test(text) && /error|not found|exception/i.test(text)) {
+      return { status: "fail", error: "Script error page" };
+    }
+    return { status: "ok" };
+  }
 }
 
 const page={minHeight:"100vh",background:"linear-gradient(155deg,#FAF6F1 55%,#EDE8E0 100%)",display:"flex",flexDirection:"column",alignItems:"center",padding:"28px 16px 56px"};
@@ -198,7 +178,6 @@ function App(){
   const [pinError,setPinError]= useState("");
   const [adminPinError,setAdminPinError]= useState("");
   const [saving,setSaving]      = useState(false);
-  const [locationError,setLocationError] = useState("");
   const [saveStatus,setSaveStatus]= useState(null); // "ok" | "fail"
   const [adminSub,setAdminSub]= useState("pins");
   const [editingPin,setEditingPin]= useState(null);
@@ -221,16 +200,6 @@ function App(){
     if(enteredPin===pins[selected.name]){
       setPinError("");
 
-      // ── Location check ────────────────────────────────────────────────
-      setScreen("locating");
-      const loc=await checkLocation();
-      if(!loc.ok){
-        setLocationError(loc.reason);
-        setScreen("locationFail");
-        return;
-      }
-      // ─────────────────────────────────────────────────────────────────
-
       const action=getLastAction(selected.name)==="in"?"out":"in";
       const record={
         name:selected.name,
@@ -245,17 +214,15 @@ function App(){
       const result = await sendToSheet(record);
       setSaving(false);
 
-      if(result.success || !SCRIPT_URL){
-        setLastActionFor(selected.name, action);
-        setLastAction(action);
-        setSaveStatus("ok");
-        setScreen("success");
+      // Keep the IN/OUT badge in step with what the person actually did
+      setLastActionFor(selected.name, action);
+      setLastAction(action);
+      setSaveStatus(result.status);
+      setScreen("success");
+      if(result.status==="ok"){
         setTimeout(()=>{ setSaveStatus(null); setScreen("home"); }, 3000);
-      } else {
-        setSaveStatus("fail");
-        setScreen("success"); // still show success — record wasn't lost, just retry
-        setTimeout(()=>{ setSaveStatus(null); setScreen("home"); }, 4000);
       }
+      // Problems stay on screen until closed, so there is time to screenshot
     } else {
       resetPin();
       setPinError("Wrong PIN — please try again");
@@ -266,34 +233,6 @@ function App(){
     if(enteredPin===ADMIN_PIN){setAdminPinError("");setScreen("admin");}
     else{resetPin();setAdminPinError("Incorrect PIN");}
   };
-
-  // ── LOCATING SCREEN ───────────────────────────────────────────────────────
-  if(screen==="locating"){
-    return(
-      <div style={{...page,justifyContent:"center"}}>
-        <div style={card({textAlign:"center"})}>
-          <div style={{fontSize:40,marginBottom:16}}>📍</div>
-          <div style={{width:40,height:40,border:`4px solid ${C.sand}`,borderTopColor:C.brown,borderRadius:"50%",animation:"spin .8s linear infinite",margin:"0 auto 20px"}}/>
-          <div style={{fontFamily:"'League Spartan',sans-serif",fontSize:18,fontWeight:700,color:C.brown}}>Checking your location…</div>
-          <div style={{fontSize:13,color:C.brown,opacity:.5,marginTop:8}}>Please allow location access if prompted</div>
-        </div>
-      </div>
-    );
-  }
-
-  // ── LOCATION FAIL SCREEN ──────────────────────────────────────────────────
-  if(screen==="locationFail"){
-    return(
-      <div style={{...page,justifyContent:"center"}}>
-        <div style={{...card({textAlign:"center",animation:"pop .4s ease forwards"})}}>
-          <div style={{fontSize:54,marginBottom:12}}>🚫</div>
-          <div style={{fontFamily:"'League Spartan',sans-serif",fontSize:22,fontWeight:700,color:C.brown,marginBottom:12}}>Cannot clock in</div>
-          <div style={{fontSize:14,color:C.brown,opacity:.65,lineHeight:1.7,marginBottom:24}}>{locationError}</div>
-          <button onClick={()=>setScreen("home")} style={{padding:"14px 32px",borderRadius:12,border:"none",background:C.brown,color:C.white,fontFamily:"'League Spartan',sans-serif",fontSize:15,fontWeight:700,cursor:"pointer"}}>Back to home</button>
-        </div>
-      </div>
-    );
-  }
 
   // ── SAVING SCREEN ──────────────────────────────────────────────────────────
   if(screen==="saving"){
@@ -313,11 +252,19 @@ function App(){
     return(
       <div style={{...page,justifyContent:"center"}}>
         <div style={{...card({textAlign:"center",animation:"pop .4s ease forwards"})}}>
-          {saveStatus==="fail"?(
+          {saveStatus!=="ok"?(
             <>
               <div style={{fontSize:54,marginBottom:12}}>⚠️</div>
-              <div style={{fontFamily:"'League Spartan',sans-serif",fontSize:22,fontWeight:700,color:C.brown}}>Network error</div>
-              <div style={{color:C.brown,opacity:.6,marginTop:10,fontSize:14,lineHeight:1.6}}>Your clock-{action} wasn't saved to Google Sheets. Check your internet connection and try again, or ask Vani to note the time manually.</div>
+              <div style={{fontFamily:"'League Spartan',sans-serif",fontSize:22,fontWeight:700,color:C.brown}}>
+                {saveStatus==="fail"?"Not saved":"Couldn't confirm it saved"}
+              </div>
+              <div style={{color:C.brown,fontWeight:600,marginTop:10,fontSize:15}}>
+                {selected?.name} · clock-{action} · {fmt.time(new Date().toISOString())}
+              </div>
+              <div style={{color:C.brown,opacity:.65,marginTop:10,fontSize:14,lineHeight:1.6}}>
+                Please take a screenshot of this screen now and send it to Vani, so your time is recorded. Don't clock {action} again.
+              </div>
+              <button onClick={()=>{ setSaveStatus(null); setScreen("home"); }} style={{marginTop:20,padding:"14px 32px",borderRadius:12,border:"none",background:C.brown,color:C.white,fontFamily:"'League Spartan',sans-serif",fontSize:15,fontWeight:700,cursor:"pointer"}}>Done</button>
             </>
           ):(
             <>
