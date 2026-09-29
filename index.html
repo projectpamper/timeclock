@@ -48,6 +48,7 @@ const STAFF = [
   { name:"Shakira",  role:"Nail Technician"    },
   { name:"Isha",     role:"Beauty Apprentice"  },
   { name:"Natalia",  role:"Beauty Apprentice"  },
+  { name:"Vani",     role:"Director"           },
 ];
 
 const ADMIN_PIN   = "1613";   // ← change this, it is readable by anyone
@@ -70,6 +71,7 @@ const STAFF_PINS = {
   "Shakira":  "4579",
   "Isha":     "3761",
   "Natalia":  "7618",
+  "Vani":     "5826",
 };
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -379,7 +381,7 @@ function App(){
   }
 
   // ── HOME ───────────────────────────────────────────────────────────────────
-  const roles=["Nail Technician","Massage Therapist","Beauty Apprentice"];
+  const roles=["Nail Technician","Massage Therapist","Beauty Apprentice","Director"];
   return(
     <div style={page}>
       {!SCRIPT_URL&&(
